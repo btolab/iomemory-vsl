@@ -75,7 +75,11 @@ debian/control: FORCE
 		new_file=$$(echo $$file | sed -r -e 's/$(fio_driver_name)(-config)?\./$(fio_driver_name)\1-$(deb_kernel_version)./;'); \
 		cp "$$file" "$$new_file"; \
 	done
-
+	cp -r $(CURDIR)/debian/$(fio_driver_name).postinst "$(CURDIR)/debian/$(fio_driver_name)-$(deb_kernel_version).postinst"
+	echo depmod $(deb_kernel_version) >> "$(CURDIR)/debian/$(fio_driver_name)-$(deb_kernel_version).postinst"
+	cp -r $(CURDIR)/debian/$(fio_driver_name).postrm "$(CURDIR)/debian/$(fio_driver_name)-$(deb_kernel_version).postrm"
+	cp -r $(CURDIR)/debian/$(fio_driver_name).prerm "$(CURDIR)/debian/$(fio_driver_name)-$(deb_kernel_version).prerm"
+	echo depmod $(deb_kernel_version) >> "$(CURDIR)/debian/$(fio_driver_name)-$(deb_kernel_version).postrm"
 
 configure: configure-stamp
 configure-stamp: debian/control
@@ -155,6 +159,12 @@ install-arch: $(install.files)
 	dh_install --sourcedir=root --fail-missing $(fio_docdir)/$(fio_driver_name) \
 	                                           $(fio_docdir)/$(fio_driver_name)-$(deb_kernel_version)
 
+	mkdir -p $(CURDIR)/debian/$(fio_driver_name)-$(deb_kernel_version)//usr/lib/fio
+	mkdir -p $(CURDIR)/debian/$(fio_driver_name)-$(deb_kernel_version)//usr/share/doc
+	mkdir -p $(CURDIR)/debian/$(fio_driver_name)-$(deb_kernel_version)//etc
+	cp -r root//usr/lib/fio/* "$(CURDIR)/debian/$(fio_driver_name)-$(deb_kernel_version)//usr/lib/fio/"
+	cp -r root//usr/share/doc/* "$(CURDIR)/debian/$(fio_driver_name)-$(deb_kernel_version)//usr/share/doc/"
+	cp -r root//etc/* "$(CURDIR)/debian/$(fio_driver_name)-$(deb_kernel_version)//etc/"
 	mkdir -p "$(CURDIR)/debian/$(fio_driver_name)-$(deb_kernel_version)/lib/modules/$(deb_kernel_version)/extra/$(fio_oem_name_short)"
 	cp driver_source/$(fio_driver_name).ko \
 		"$(CURDIR)/debian/$(fio_driver_name)-$(deb_kernel_version)/lib/modules/$(deb_kernel_version)/extra/$(fio_oem_name_short)"

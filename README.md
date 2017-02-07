@@ -28,20 +28,20 @@ Installation can be done according to the original README.
 ## DKMS
 A dkms.conf file is supplied, so it should be plug and play:
 ```
-sudo cp -r iomemory-vsl/root/usr/src/iomemory-vsl-3.2.10 /usr/src/
-sudo mkdir -p /var/lib/dkms/iomemory-vsl/3.2.10/build
-sudo ln -s /usr/src/iomemory-vsl-3.2.10 /var/lib/dkms/iomemory-vsl/3.2.10/source
-sudo dkms build -m iomemory-vsl -v 3.2.10
-sudo dkms install -m iomemory-vsl -v 3.2.10
+sudo cp -r iomemory-vsl/root/usr/src/iomemory-vsl-3.2.14 /usr/src/
+sudo mkdir -p /var/lib/dkms/iomemory-vsl/3.2.14/build
+sudo ln -s /usr/src/iomemory-vsl-3.2.14 /var/lib/dkms/iomemory-vsl/3.2.14/source
+sudo dkms build -m iomemory-vsl -v 3.2.14
+sudo dkms install -m iomemory-vsl -v 3.2.14
 sudo modprobe iomemory-vsl
 ```
 With fio-utils installed you should see the following:
 ```
-[11:31:43] funs@morbo:/var/lib/dkms/iomemory-vsl/3.2.10$ sudo fio-status
+[11:31:43] funs@morbo:/var/lib/dkms/iomemory-vsl/3.2.14$ sudo fio-status
 [sudo] password for funs:
 
 Found 1 ioMemory device in this system
-Driver version: 3.2.10 build 1509
+Driver version: 3.2.14 build 1675
 
 Adapter: Single Adapter
         HP 320GB MLC PCIe ioDrive for ProLiant Servers, Product Number:600279-B21, SN:459457
@@ -68,5 +68,5 @@ fioa    State: Online, Type: block device
 ## Other notes
 Installing the fio-util, fio-common, fio-preinstall and fio-sysvinit are
 recommended.
-When moving from source 2.3.11 to source 3.2.10 the firmware HAS TO BE UPDATED
+When moving from source 2.3.11 to source 3.2.14 the firmware HAS TO BE UPDATED
 to 3.2.10.20150212.
