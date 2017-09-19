@@ -1,4 +1,4 @@
-%define fio_version        3.2.15.1699
+%define fio_version        3.2.15.1700
 %define fio_sysconfdir     /etc
 %define fio_oem_name       fusionio
 %define fio_oem_name_short fio

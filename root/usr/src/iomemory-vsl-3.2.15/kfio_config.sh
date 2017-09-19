@@ -162,6 +162,7 @@ KFIOC_BIO_HAS_USCORE_BI_CNT
 KFIOC_BIO_ENDIO_REMOVED_ERROR
 KFIOC_MAKE_REQUEST_FN_UINT
 KFIOC_GET_USER_PAGES_REQUIRES_TASK
+KFIOC_BARRIER_USES_QUEUE_FLAGS
 "
 
 
@@ -1337,6 +1338,26 @@ void kfioc_hew_barrier_scheme(void)
     kfioc_test "$test_code" KFIOC_NEW_BARRIER_SCHEME 1 -Werror
 }
 
+# flags:         KFIOC_BARRIER_USES_QUEUE_FLAGS
+# usage:         1   Kernel uses queue_flags field
+#                0   It does not
+KFIOC_BARRIER_USES_QUEUE_FLAGS()
+{
+    local test_flag="$1"
+    local test_code='
+#include <linux/blkdev.h>
+void kfioc_barrier_uses_queue_flags(void)
+{
+    struct request_queue *q = NULL;
+
+    if (test_bit(QUEUE_FLAG_WC, &q->queue_flags))
+    {
+    }
+}
+'
+    kfioc_test "$test_code" KFIOC_BARRIER_USES_QUEUE_FLAGS 1 -Werror
+}
+
 # flag:          KFIOC_HAS_BLK_FS_REQUEST
 # usage:         1   Kernel has obsolete blk_fs_request macro
 #                0   It does not
@@ -1613,9 +1634,9 @@ KFIOC_HAS_INFLIGHT_RW_ATOMIC()
     local test_code='
 #include <linux/blkdev.h>
 #include <linux/atomic.h>
+struct gendisk gd;
 void kfioc_has_inflight_rw_atomic(void)
 {
-    struct gendisk gd;
     atomic_set(&gd.part0.in_flight[0], 0);
 }
 '
