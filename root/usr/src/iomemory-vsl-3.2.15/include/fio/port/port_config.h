@@ -1,5 +1,5 @@
 /* -----------------------------------------------------------------------------
- * Copyright (c) 2016, Fusion-io, Inc. (acquired by SanDisk Corp. 2014)
+ * Copyright (c) 2017, Fusion-io, Inc. (acquired by SanDisk Corp. 2014)
  * Copyright (c) 2014 SanDisk Corp. and/or all its affiliates.
  * All rights reserved.
  * Redistribution and use in source and binary forms, with or without
@@ -185,7 +185,7 @@
 #define ENABLE_ECC 1
 
 /* The full version of this release */
-#define FUSION_VERSION "3.2.14"
+#define FUSION_VERSION "3.2.15"
 
 /* Memory limit in MiBytes for rmap rescan. */
 #define RMAP_MEMORY_LIMIT_MiB 3100
@@ -341,7 +341,7 @@
 #define DISABLE_MODULE_PARAM_EXPORT 0
 
 /* The micro version of this build */
-#define FUSION_MICRO_VERSION "14"
+#define FUSION_MICRO_VERSION "15"
 
 /* OEM formal name */
 #define FIO_OEM_NAME_FORMAL "Fusion-io"

@@ -2,7 +2,7 @@
 
 #-----------------------------------------------------------------------------
 # Copyright (c) 2006-2014, Fusion-io, Inc.(acquired by SanDisk Corp. 2014)
-# Copyright (c) 2014-2015 SanDisk Corp. and/or all its affiliates. All rights reserved.
+# Copyright (c) 2014-2017 SanDisk Corp. and/or all its affiliates. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -115,9 +115,8 @@ KFIOC_HAS_BLK_LIMITS_IO_MIN
 KFIOC_HAS_BLK_LIMITS_IO_OPT
 KFIOC_HAS_BLK_QUEUE_MAX_SEGMENTS
 KFIOC_HAS_UNIFIED_BLKTYPES
-KFIOC_HAS_REQ_OP_DISCARD
-KFIOC_HAS_BIO_BI_OPF
 KFIOC_HAS_BIO_RW_DISCARD
+KFIOC_HAS_SEPARATE_OP_FLAGS
 KFIOC_SYSRQ_HANDLER_NEEDS_TTY_STRUCT
 KFIOC_PCI_REQUEST_REGIONS_CONST_CHAR
 KFIOC_FOPS_USE_LOCKED_IOCTL
@@ -161,6 +160,8 @@ KFIOC_HAS_FILE_INODE_HELPER
 KFIOC_HAS_CPUMASK_WEIGHT
 KFIOC_BIO_HAS_USCORE_BI_CNT
 KFIOC_BIO_ENDIO_REMOVED_ERROR
+KFIOC_MAKE_REQUEST_FN_UINT
+KFIOC_GET_USER_PAGES_REQUIRES_TASK
 "
 
 
@@ -1711,39 +1712,22 @@ void foo(void)
     kfioc_test "$test_code" "$test_flag" 1
 }
 
-# flag:           KFIOC_HAS_REQ_OP_DISCARD
-#                 1     if the kernel supports has a bio DISCARD flag
+# flag:           KFIOC_HAS_SEPARATE_OP_FLAGS
+#                 1     if the kernel has blkg_rwstat seperate op from flags
 #                 0     if the kernel does not
-KFIOC_HAS_REQ_OP_DISCARD()
+# https://github.com/torvalds/linux/commit/63a4cc24867de73626e16767ce616c50dc5438d3
+KFIOC_HAS_SEPARATE_OP_FLAGS()
 {
     local test_flag="$1"
     local test_code='
-#include <linux/bio.h>
+#include <linux/blk_types.h>
 void foo(void)
 {
-    unsigned long flags = REQ_OP_DISCARD;
+    struct bio bio;
+    bio.bi_opf = 42;
 }
 '
-
     kfioc_test "$test_code" "$test_flag" 1
-}
-
-# flag:           KFIOC_HAS_BIO_BI_OPF
-#                 1     if the kernel supports a bio OPF flag
-#                 0     if the kernel does not
-KFIOC_HAS_BIO_BI_OPF()
-{
-    local test_flag="$1"
-    local test_code='
-#include <linux/bio.h>
-void foo(void)
-{
-    struct bio bio __attribute__ ((unused));
-    bio.bi_opf = 0;
-}
-'
-
-    kfioc_test "$test_code" "$test_flag" 1 -Werror
 }
 
 
@@ -2494,6 +2478,47 @@ void kfioc_bio_endio_removed_error(void) {
 '
     kfioc_test "$test_code" "$test_flag" 1
 }
+
+# flag:          KFIOC_MAKE_REQUEST_FN_UINT
+# usage:         1   make_request_fn returns unsigned int
+#                0   It returns 0/1 for done/remap
+KFIOC_MAKE_REQUEST_FN_UINT()
+{
+    local test_flag="$1"
+    local test_code='
+#include <linux/blkdev.h>
+static unsigned int my_make_request_fn(struct request_queue *q, struct bio *bio)
+{
+    return 1;
+}
+void test_make_request_fn(void)
+{
+    blk_queue_make_request(NULL, my_make_request_fn);
+}
+'
+    kfioc_test "$test_code" "$test_flag" 1 -Werror
+}
+
+# flag:           KFIOC_GET_USER_PAGES_REQUIRES_TASK
+# usage:          1   get_user_pages has `struct task_struct *tsk, struct mm_struct *mm` params
+#                 0   these params are deprecated
+# git commit:     c12d2da56d0e07d230968ee2305aaa86b93a6832 <- removed "old" API
+#                 cde70140fed8429acf7a14e2e2cbd3e329036653 <- started the API switch
+# kernel version: v4.6-rc2
+KFIOC_GET_USER_PAGES_REQUIRES_TASK()
+{
+    local test_flag="$1"
+    local test_code='
+#include <linux/mm.h>
+
+void test_get_user_pages(void)
+{
+    get_user_pages(NULL, NULL, 0, 1, 1, 0, NULL, NULL);
+}
+'
+    kfioc_test "$test_code" "$test_flag" 1 -Werror
+}
+
 
 ###############################################################################
 

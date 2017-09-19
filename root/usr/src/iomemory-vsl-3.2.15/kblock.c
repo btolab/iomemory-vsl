@@ -64,7 +64,6 @@
 
 #include <linux/version.h>
 #include <linux/fs.h>
-#include <linux/blk_types.h>
 #if !defined(__VMKLNX__)
 #include <linux/buffer_head.h>
 #endif
@@ -72,10 +71,6 @@
 extern int use_workqueue;
 #if !defined(__VMKLNX__)
 static int fio_major;
-#endif
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
-#define PAGE_CACHE_SIZE PAGE_SIZE
 #endif
 
 /*
@@ -102,6 +97,13 @@ int iodrive_barrier_sync = 0;
 
 #if KFIOC_DISCARD == 1
 extern int enable_discard;
+#endif
+
+#if KFIOC_HAS_SEPARATE_OP_FLAGS
+#if !defined(bio_flags)
+// bi_opf defined in kernel 4.8, but bio_flags not defined till 4.9
+#define bio_flags(bio)  (bio)->bi_opf
+#endif
 #endif
 
 #if defined(__VMKLNX__) || KFIOC_HAS_RQ_POS_BYTES == 0
@@ -357,8 +359,10 @@ enum {
 static struct request_queue *kfio_alloc_queue(struct kfio_disk *dp, kfio_numa_node_t node);
 #if KFIOC_MAKE_REQUEST_FN_VOID
 static void kfio_make_request(struct request_queue *queue, struct bio *bio);
+#elif KFIOC_MAKE_REQUEST_FN_UINT
+static unsigned int kfio_make_request(struct request_queue *queue, struct bio *bio);
 #else
-static blk_qc_t kfio_make_request(struct request_queue *queue, struct bio *bio);
+static int kfio_make_request(struct request_queue *queue, struct bio *bio);
 #endif
 static void __kfio_bio_complete(struct bio *bio, uint32_t bytes_complete, int error);
 #endif
@@ -499,7 +503,7 @@ int kfio_create_disk(struct fio_device *dev, kfio_pci_dev_t *pdev, uint32_t sect
 # endif
 #endif
 
-    blk_queue_max_segment_size(rq, PAGE_CACHE_SIZE);
+    blk_queue_max_segment_size(rq, PAGE_SIZE);
 
 #if KFIOC_HAS_BLK_QUEUE_HARDSECT_SIZE
     blk_queue_hardsect_size(rq, sector_size);
@@ -897,22 +901,23 @@ void kfio_set_gd_in_flight(kfio_disk_t *fgd, int rw, int in_flight)
 #if KFIOC_DISCARD == 1
 static int kfio_bio_is_discard(struct bio *bio)
 {
+#if !KFIOC_HAS_SEPARATE_OP_FLAGS
+#if KFIOC_HAS_UNIFIED_BLKTYPES
     /*
      * RHEL6.1 backported a partial set of the unified blktypes, but
      * still has separate bio and req DISCARD flags. If BIO_RW_DISCARD
      * exists, then that is used on the bio.
      */
-#if KFIOC_HAS_UNIFIED_BLKTYPES
 #if KFIOC_HAS_BIO_RW_DISCARD
     return bio->bi_rw & (1 << BIO_RW_DISCARD);
-#elif defined(KFIOC_HAS_REQ_OP_DISCARD)
-    return (bio_op(bio) == REQ_OP_DISCARD);
 #else
-    // defined(REQ_DISCARD)
-    return (bio->bi_rw & REQ_DISCARD);
+    return bio->bi_rw & REQ_DISCARD;
 #endif
 #else
     return bio_rw_flagged(bio, BIO_RW_DISCARD);
+#endif
+#else
+    return bio_op(bio) == REQ_OP_DISCARD;
 #endif
 }
 #endif
@@ -931,9 +936,9 @@ static void kfio_dump_bio(const char *msg, const struct bio * const bio)
     // Use a local conversion to avoid printf format warnings on some platforms
     sector = (uint64_t)BI_SECTOR(bio);
 
-#if KFIOC_HAS_BIO_BI_OPF
-    infprint("%s: sector: %llx: flags: %x : opf: %u : vcnt: %x", msg,
-             sector, bio->bi_flags, bio->bi_opf, bio->bi_vcnt);
+#if KFIOC_HAS_SEPARATE_OP_FLAGS
+    infprint("%s: sector: %llx: flags: %lx : op: %x, op_flags: %x : vcnt: %x", msg,
+             sector, (unsigned long)bio->bi_flags, bio_op(bio), bio_flags(bio), bio->bi_vcnt);
 #else
     infprint("%s: sector: %llx: flags: %lx : rw: %lx : vcnt: %x", msg,
              sector, (unsigned long)bio->bi_flags, bio->bi_rw, bio->bi_vcnt);
@@ -985,16 +990,16 @@ static inline void kfio_set_comp_cpu(kfio_bio_t *fbio, struct bio *bio)
 
 static unsigned long __kfio_bio_sync(struct bio *bio)
 {
-#if KFIOC_HAS_UNIFIED_BLKTYPES
-#if KFIOC_HAS_BIO_BI_OPF
-    return bio->bi_opf & REQ_SYNC;
+#if KFIOC_HAS_SEPARATE_OP_FLAGS
+    return bio_flags(bio) == REQ_SYNC;
 #else
+#if KFIOC_HAS_UNIFIED_BLKTYPES
     return bio->bi_rw & REQ_SYNC;
-#endif
 #elif KFIOC_HAS_BIO_RW_FLAGGED
     return bio_rw_flagged(bio, BIO_RW_SYNCIO);
 #else
     return bio_sync(bio);
+#endif
 #endif
 }
 
@@ -1125,8 +1130,13 @@ static kfio_bio_t *kfio_map_to_fbio(struct request_queue *queue, struct bio *bio
     if ((((BI_SECTOR(bio) * KERNEL_SECTOR_SIZE) & disk->sector_mask) != 0) ||
         ((BI_SIZE(bio) & disk->sector_mask) != 0))
     {
-        engprint("Rejecting malformed bio %p sector %lu size 0x%08x flags 0x%08lx rw 0x%08lx\n", bio,
-                 (unsigned long)BI_SECTOR(bio), BI_SIZE(bio), (unsigned long)bio->bi_flags, bio->bi_rw);
+#if KFIOC_HAS_SEPARATE_OP_FLAGS
+    engprint("Rejecting malformed bio %p sector %lu size 0x%08x flags 0x%08lx op 0x%08x op_flags 0x%04x\n", bio,
+             (unsigned long)BI_SECTOR(bio), BI_SIZE(bio), (unsigned long)bio->bi_flags, bio_op(bio), bio_flags(bio));
+#else
+    engprint("Rejecting malformed bio %p sector %lu size 0x%08x flags 0x%08lx rw 0x%08lx\n", bio,
+             (unsigned long)BI_SECTOR(bio), BI_SIZE(bio), (unsigned long)bio->bi_flags, bio->bi_rw);
+#endif
         return NULL;
     }
 
@@ -1727,8 +1737,11 @@ static struct bio *kfio_add_bio_to_plugged_list(void *data, struct bio *bio)
 #if KFIOC_MAKE_REQUEST_FN_VOID
 static void kfio_make_request(struct request_queue *queue, struct bio *bio)
 #define FIO_MFN_RET
+#elif KFIOC_MAKE_REQUEST_FN_UINT
+static unsigned int kfio_make_request(struct request_queue *queue, struct bio *bio)
+#define FIO_MFN_RET 0
 #else
-static blk_qc_t kfio_make_request(struct request_queue *queue, struct bio *bio)
+static int kfio_make_request(struct request_queue *queue, struct bio *bio)
 #define FIO_MFN_RET 0
 #endif
 {
@@ -2276,8 +2289,8 @@ static kfio_bio_t *kfio_request_to_bio(kfio_disk_t *disk, struct request *req,
     else
 #if KFIOC_DISCARD == 1
     /* Detect trim requests. */
-#if defined(KFIOC_HAS_REQ_OP_DISCARD)
-    if (enable_discard && (req->cmd_flags & REQ_OP_DISCARD))
+#if KFIOC_HAS_SEPARATE_OP_FLAGS
+    if (enable_discard && (req_op(req) == REQ_OP_DISCARD))
 #else
     if (enable_discard && (req->cmd_flags & REQ_DISCARD))
 #endif
@@ -2344,9 +2357,10 @@ static kfio_bio_t *kfio_request_to_bio(kfio_disk_t *disk, struct request *req,
                 int bv_i;
 #endif
 
-#ifdef KFIOC_HAS_BIO_BI_OPF
-                errprint("\tbio %p sector %lu size 0x%08x flags 0x%08lx opf 0x%08ul\n", lbio,
-                         (unsigned long)BI_SECTOR(lbio), BI_SIZE(lbio), (unsigned long)lbio->bi_flags, lbio->bi_opf);
+#if KFIOC_HAS_SEPARATE_OP_FLAGS
+                errprint("\tbio %p sector %lu size 0x%08x flags 0x%08lx op 0x%04x op_flags 0x%04x\n", lbio,
+                         (unsigned long)BI_SECTOR(lbio), BI_SIZE(lbio), (unsigned long)lbio->bi_flags,
+                         bio_op(lbio), bio_flags(lbio));
 #else
                 errprint("\tbio %p sector %lu size 0x%08x flags 0x%08lx rw 0x%08lx\n", lbio,
                          (unsigned long)BI_SECTOR(lbio), BI_SIZE(lbio), (unsigned long)lbio->bi_flags, lbio->bi_rw);
