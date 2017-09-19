@@ -74,6 +74,10 @@ extern int use_workqueue;
 static int fio_major;
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
+#define PAGE_CACHE_SIZE PAGE_SIZE
+#endif
+
 /*
  * RHEL6.1 will trigger both old and new scheme due to their backport,
  * whereas new kernels will trigger only the new scheme. So for the RHEL6.1
@@ -901,8 +905,11 @@ static int kfio_bio_is_discard(struct bio *bio)
 #if KFIOC_HAS_UNIFIED_BLKTYPES
 #if KFIOC_HAS_BIO_RW_DISCARD
     return bio->bi_rw & (1 << BIO_RW_DISCARD);
+#elif defined(KFIOC_HAS_REQ_OP_DISCARD)
+    return (bio_op(bio) == REQ_OP_DISCARD);
 #else
-    return bio->bi_rw & REQ_DISCARD;
+    // defined(REQ_DISCARD)
+    return (bio->bi_rw & REQ_DISCARD);
 #endif
 #else
     return bio_rw_flagged(bio, BIO_RW_DISCARD);
@@ -924,8 +931,13 @@ static void kfio_dump_bio(const char *msg, const struct bio * const bio)
     // Use a local conversion to avoid printf format warnings on some platforms
     sector = (uint64_t)BI_SECTOR(bio);
 
+#if KFIOC_HAS_BIO_BI_OPF
+    infprint("%s: sector: %llx: flags: %x : opf: %u : vcnt: %x", msg,
+             sector, bio->bi_flags, bio->bi_opf, bio->bi_vcnt);
+#else
     infprint("%s: sector: %llx: flags: %lx : rw: %lx : vcnt: %x", msg,
              sector, (unsigned long)bio->bi_flags, bio->bi_rw, bio->bi_vcnt);
+#endif
     infprint("%s : idx: %x : phys_segments: %x : size: %x",
              msg, BI_IDX(bio), bio->bi_phys_segments, BI_SIZE(bio));
 #if KFIOC_BIO_HAS_HW_SEGMENTS
@@ -974,7 +986,11 @@ static inline void kfio_set_comp_cpu(kfio_bio_t *fbio, struct bio *bio)
 static unsigned long __kfio_bio_sync(struct bio *bio)
 {
 #if KFIOC_HAS_UNIFIED_BLKTYPES
+#if KFIOC_HAS_BIO_BI_OPF
+    return bio->bi_opf & REQ_SYNC;
+#else
     return bio->bi_rw & REQ_SYNC;
+#endif
 #elif KFIOC_HAS_BIO_RW_FLAGGED
     return bio_rw_flagged(bio, BIO_RW_SYNCIO);
 #else
@@ -2260,7 +2276,11 @@ static kfio_bio_t *kfio_request_to_bio(kfio_disk_t *disk, struct request *req,
     else
 #if KFIOC_DISCARD == 1
     /* Detect trim requests. */
+#if defined(KFIOC_HAS_REQ_OP_DISCARD)
+    if (enable_discard && (req->cmd_flags & REQ_OP_DISCARD))
+#else
     if (enable_discard && (req->cmd_flags & REQ_DISCARD))
+#endif
     {
         fbio->fbio_cmd = KBIO_CMD_DISCARD;
     }
@@ -2324,8 +2344,13 @@ static kfio_bio_t *kfio_request_to_bio(kfio_disk_t *disk, struct request *req,
                 int bv_i;
 #endif
 
+#ifdef KFIOC_HAS_BIO_BI_OPF
+                errprint("\tbio %p sector %lu size 0x%08x flags 0x%08lx opf 0x%08ul\n", lbio,
+                         (unsigned long)BI_SECTOR(lbio), BI_SIZE(lbio), (unsigned long)lbio->bi_flags, lbio->bi_opf);
+#else
                 errprint("\tbio %p sector %lu size 0x%08x flags 0x%08lx rw 0x%08lx\n", lbio,
                          (unsigned long)BI_SECTOR(lbio), BI_SIZE(lbio), (unsigned long)lbio->bi_flags, lbio->bi_rw);
+#endif
                 errprint("\t\tvcnt %u idx %u\n", lbio->bi_vcnt, BI_IDX(lbio));
 
                 bio_for_each_segment(vec, lbio, bv_i)

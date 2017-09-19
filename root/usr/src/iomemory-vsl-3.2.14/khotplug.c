@@ -114,7 +114,14 @@ int kfio_register_cpu_notifier(kfio_cpu_notify_fn *func)
 
     if (do_register)
     {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0)
         register_cpu_notifier(&kfio_linux_cpu_notifier);
+#else
+        cpuhp_setup_state(CPUHP_AP_ONLINE_DYN,
+                          "kfio/sandisk:online",
+                          kfio_cpu_online,
+                          kfio_cpu_down_prep)
+#endif
     }
 #endif
     return 0;
@@ -151,7 +158,11 @@ void kfio_unregister_cpu_notifier(kfio_cpu_notify_fn *func)
      */
     if (do_unregister != 0)
     {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0)
         unregister_cpu_notifier(&kfio_linux_cpu_notifier);
+#else
+        cpuhp_remove_state_nocalls(kfio_cpu_online)
+#endif
     }
 
 #endif
